@@ -25,23 +25,6 @@ np.random.seed(0)
 torch.manual_seed(0)
 torch.cuda.manual_seed(0)
 
-
-
-def bounding_box(phi, X_train, y_train):
-    W, b, Z = phi
-    m, n = W.shape
-    N, k = Z.shape
-    Wtmp = W.reshape(m,n).clone()
-    Wtmp = W[:, 0:n-k]
-    Wtmp[Wtmp < 0.5] = 0.0
-    Wtmp[Wtmp > 0.5] = 1.0
-    Wtmp = torch.unique(Wtmp, dim=0)
-    btmp = []
-    res = (Wtmp@X_train.T + torch.tile(y_train, (1,Wtmp.shape[0])).T)
-    for i in range(Wtmp.shape[0]):
-        btmp.append(torch.unique(res[i]).long())
-    return Wtmp, btmp
-
 # loading zero
 ckpt = './checkpoint/' + opt.exp_name + '__zero_0.t7'
 # init chektpoint

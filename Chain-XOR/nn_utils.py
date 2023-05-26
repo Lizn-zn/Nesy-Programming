@@ -84,6 +84,23 @@ def evaluate_batch(W, b, W0, b0, X_test, y_test):
     print('acc: %.2f' % (solve == y_test).float().mean())
 
 
+def bounding_box(phi, X_data, y_data):
+    W, b, Z = phi
+    m, n = W.shape
+    N, k = Z.shape
+    Wtmp = W.reshape(m,n).clone()
+    Wtmp = W[:, 0:n-k]
+    Wtmp[Wtmp < 0.5] = 0.0
+    Wtmp[Wtmp > 0.5] = 1.0
+    Wtmp = torch.unique(Wtmp, dim=0)
+    btmp = []
+    res = (Wtmp@X_data.T + torch.tile(y_data, (1,Wtmp.shape[0])).T)
+    for i in range(Wtmp.shape[0]):
+        btmp.append(torch.unique(res[i]).long())
+    return Wtmp, btmp
+
+
+
 def train(X_train, y_train, opt):
     #### logic programming
     N = len(X_train)
@@ -91,6 +108,7 @@ def train(X_train, y_train, opt):
     k = opt.k
     n = opt.len + opt.k
     lamda = opt.lamda
+    alpha = opt.alpha
     gamma = opt.logic_lr
     #### hyperparameter
     num_epochs = opt.num_epochs
@@ -108,36 +126,37 @@ def train(X_train, y_train, opt):
     e2 = torch.ones(m, n).to(device)
     b = torch.ones(m,1).to(device)*opt.len
 
-    optim_Z = optimizer.Adam([{'params': Z, 'lr':1e-3}]) 
+    # optim_Z = optimizer.Adam([{'params': Z, 'lr':1e-3}]) 
 
     for epoch in range(num_epochs):
         W_old = W.clone().detach()
 
         # update z
-        # with torch.no_grad():
-        #     Ztmp = Z.clone() # N x k
-        #     Wtmp = W[:, -k:] # m x k
-        #     Wrest = W[:, 0:n-k] # m x n-k
-        #     B = (Wtmp.T@(b-y_train.T-Wrest@X_train.T)).T + t1*Ztmp - 0.5*t1*e1
-        #     I = torch.eye(k).cuda()
-        #     A = Wtmp.T@Wtmp + 1e-3*I
-        #     Z = torch.linalg.solve(A,B.T).T
-        #     Z = torch.clamp(Ztmp, min=0.0, max=1.0)
+        with torch.no_grad():
+            Ztmp = Z.clone() # N x k
+            Wz = W[:, -k:] # m x k
+            Wx = W[:, 0:n-k] # m x n-k
+            B = (Wz.T@(b-y_train-Wx@X_train.T)).T + t1*Ztmp - 0.5*t1*e1
+            I = torch.eye(k).cuda()
+            A = Wz.T@Wz + alpha * I
+            Z = torch.linalg.solve(A,B.T).T
+            Z = torch.clamp(Z, min=0.0, max=1.0)
 
         # update Z by gradient descent because of ill-condition
-        Ztmp = Z.clone().detach() # N x k
+        # Ztmp = Z.clone().detach() # N x k
+        # out = torch.cat([X_train, Z], dim=-1)
+        # loss = (b - y_train -  W@out.T).square()
+        # logic = loss.sum()
+        # reg = t1*((e1-Ztmp)*Z).sum()
+        # loss = logic + reg
+        # optim_Z.zero_grad()
+        # loss.backward()
+        # optim_Z.step()
+        # with torch.no_grad():
+        #     Z[Z < 0.0] = 0.0
+        #     Z[Z > 1.0] = 1.0
         out = torch.cat([X_train, Z], dim=-1)
-        loss = (b - y_train.T -  W@out.T).square()
-        logic = loss.sum()
-        reg = t1*((e1-Ztmp)*Z).sum()
-        loss = logic + reg
-        optim_Z.zero_grad()
-        loss.backward()
-        optim_Z.step()
-        with torch.no_grad():
-            Z[Z < 0.0] = 0.0
-            Z[Z > 1.0] = 1.0
-        out = torch.cat([X_train, Z], dim=-1)
+
             
         # # logic
         with torch.no_grad():
@@ -145,7 +164,7 @@ def train(X_train, y_train, opt):
             I = torch.eye(n).to(device)
             # compute W by solving WA=B
             A = I*(gamma+lamda) + out.T@out
-            B = ((gamma+t2)*W + lamda*W_init - 0.5*t2*e2 + (b-y_train.T)@out)
+            B = ((gamma+t2)*W + lamda*W_init - 0.5*t2*e2 + (b-y_train)@out)
             W = torch.linalg.solve(A,B,left=False)
 
             # clamp
@@ -155,7 +174,7 @@ def train(X_train, y_train, opt):
                 b = (gamma*b + (W@out.T).sum(dim=-1, keepdim=True)) / (gamma)
                 b = torch.round(torch.clamp(b, min=1.0))
 
-        logic = (b - y_train.T -  W@out.T).square().sum()
+        logic = (b - y_train -  W@out.T).square().sum()
 
             
         sys.stdout.write('\r')
@@ -178,58 +197,4 @@ def train(X_train, y_train, opt):
     phi = (W,b,Z)
     return phi
 
-# def train(X, y, opt):
-#     t1, t2 = 0.0, 0.0
-#     N = len(X)
-#     W = (torch.rand(m,n)*1.0).cuda()
-#     W_init = W.clone()
-#     Z = (torch.rand(N,k)*1.0).cuda()
-#     Z = nn.Parameter(Z)
-#     W = nn.Parameter(W)
-#     print(torch.linalg.matrix_rank(W), torch.linalg.cond(W))
-#     e1 = torch.ones(N, k).cuda()
-#     e2 = torch.ones(m, n).cuda()
-#     b = torch.ones(m,1).cuda()*opt.len
-
-#     optim_Z = optimizer.Adam([{'params': Z, 'lr':1e-3},  {'params': W, 'lr': 1e-3}]) # {'params': W, 'lr': 1e-3}
-
-#     for epoch in range(num_epochs):
-#         W_old = W.clone().detach()
-#         Ztmp = Z.clone().detach() # N x k
-#         out = torch.cat([X, Z], dim=-1)
-#         loss = (b - y.T -  W@out.T).square()
-#         logic = loss.sum()
-#         reg = t1*((e1-Ztmp)*Z).sum() + lamda*(W-W_init).square().sum() + t2*((e2-W_old)*W).sum()
-#         loss = logic + reg
-#         optim_Z.zero_grad()
-#         loss.backward()
-#         optim_Z.step()
-#         with torch.no_grad():
-#             Z[Z < 0.0] = 0.0
-#             Z[Z > 1.0] = 1.0
-#             W[W < 0.0] = 0.0
-#             W[W > 1.0] = 1.0
-
-#         logic = (b - y.T -  W@out.T).square().sum()
-
-            
-#         sys.stdout.write('\r')
-#         sys.stdout.write('| ite: %d logic: %.2f|' %(epoch, logic))
-#         sys.stdout.flush()
-
-#         # compute rank
-#         if epoch > 0 and epoch % 5000 == 0:
-#             zmean0 = Z[Z < 0.5].mean().item()
-#             zmean1 = Z[Z > 0.5].mean().item()
-#             wmean0 = W[W < 0.5].mean().item()
-#             wmean1 = W[W > 0.5].mean().item()
-#             if zmean0 > tol or zmean1 < 1-tol:
-#                 t1 += 0.1
-#             if wmean0 > tol or wmean1 < 1-tol:
-#                 t2 += 0.1
-#         if epoch > 0 and epoch % 5000 == 0:
-#             print("\t WMean: %.3f/%.3f ZMean: %.2f/%.2f t1/t2 %.2f/%.2f" % (wmean0, wmean1, zmean0, zmean1, t1, t2))
-
-#     phi = (W.detach(),b,Z)
-#     return phi
 
