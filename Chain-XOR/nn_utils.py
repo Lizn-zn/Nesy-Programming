@@ -142,21 +142,7 @@ def train(X_train, y_train, opt):
             Z = torch.linalg.solve(A,B.T).T
             Z = torch.clamp(Z, min=0.0, max=1.0)
 
-        # update Z by gradient descent because of ill-condition
-        # Ztmp = Z.clone().detach() # N x k
-        # out = torch.cat([X_train, Z], dim=-1)
-        # loss = (b - y_train -  W@out.T).square()
-        # logic = loss.sum()
-        # reg = t1*((e1-Ztmp)*Z).sum()
-        # loss = logic + reg
-        # optim_Z.zero_grad()
-        # loss.backward()
-        # optim_Z.step()
-        # with torch.no_grad():
-        #     Z[Z < 0.0] = 0.0
-        #     Z[Z > 1.0] = 1.0
         out = torch.cat([X_train, Z], dim=-1)
-
             
         # # logic
         with torch.no_grad():
