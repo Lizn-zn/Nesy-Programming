@@ -136,9 +136,9 @@ def train(X_train, y_train, opt):
             Ztmp = Z.clone() # N x k
             Wz = W[:, -k:] # m x k
             Wx = W[:, 0:n-k] # m x n-k
-            B = (Wz.T@(b-y_train-Wx@X_train.T)).T + t1*Ztmp - 0.5*t1*e1
+            B = (Wz.T@(b-y_train-Wx@X_train.T)).T + (gamma+t1)*Ztmp - 0.5*t1*e1
             I = torch.eye(k).cuda()
-            A = Wz.T@Wz + alpha * I
+            A = Wz.T@Wz + gamma * I
             Z = torch.linalg.solve(A,B.T).T
             Z = torch.clamp(Z, min=0.0, max=1.0)
 
