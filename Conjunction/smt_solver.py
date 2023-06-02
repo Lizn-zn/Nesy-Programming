@@ -19,7 +19,6 @@ def sat_solver(res, b):
             eqn.append(PbEq([(X,1)], t - r.item()))
         s.add(Or(eqn))
 
-
     if s.check() == sat:
         res = [is_true(s.model()[X])]
         res = np.array(res)*1.0
